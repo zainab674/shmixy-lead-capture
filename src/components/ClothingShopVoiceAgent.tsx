@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Mic, MicOff, ShoppingBag, Clock, MapPin, Tag, Loader2 } from "lucide-react";
+import { Mic, MicOff, Volume2, ShoppingBag, Clock, MapPin, Phone, Loader2, Play, Square } from "lucide-react";
 
 interface Message {
   id: string;
@@ -14,6 +14,7 @@ const ClothingShopVoiceAgent = () => {
   const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isConversationActive, setIsConversationActive] = useState(false);
   const [orderState, setOrderState] = useState<'idle' | 'browsing' | 'category' | 'style' | 'size' | 'color' | 'fitting' | 'checkout' | 'delivery'>('idle');
   const [currentOrder, setCurrentOrder] = useState({
     category: '',
@@ -35,7 +36,7 @@ const ClothingShopVoiceAgent = () => {
   const [transcript, setTranscript] = useState("");
   const [silenceTimer, setSilenceTimer] = useState<NodeJS.Timeout | null>(null);
   const [lastAudioTime, setLastAudioTime] = useState<number>(0);
-  const [silenceCountdown, setSilenceCountdown] = useState<number>(30);
+  const [silenceCountdown, setSilenceCountdown] = useState<number>(5);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -221,7 +222,7 @@ Response:`;
               console.log('Silence detected for 30 seconds, stopping recording...');
               mediaRecorder.stop();
             }
-          }, 30000);
+          }, 5000);
 
           setSilenceTimer(newSilenceTimer);
         }
@@ -365,6 +366,78 @@ Response:`;
     }
   };
 
+  const startConversation = () => {
+    setIsConversationActive(true);
+    setOrderState('idle');
+    setCurrentOrder({
+      category: '',
+      style: '',
+      size: '',
+      color: '',
+      fitting: false,
+      deliveryMethod: '',
+      address: ''
+    });
+    setMessages([
+      {
+        id: "1",
+        text: "Hi! Welcome to StyleHub Fashion. I can help you find the perfect outfit, check our latest collections, or assist with your shopping needs. What would you like to explore today?",
+        isUser: false,
+        timestamp: new Date(),
+      },
+    ]);
+    // Automatically start listening
+    setTimeout(() => {
+      startListening();
+    }, 1000);
+  };
+
+  const endConversation = () => {
+    // Stop all speech synthesis
+    if ('speechSynthesis' in window) {
+      speechSynthesis.cancel();
+    }
+    
+    // Stop any ongoing recording
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+    
+    // Clear all timers
+    if (silenceTimer) {
+      clearTimeout(silenceTimer);
+      setSilenceTimer(null);
+    }
+    
+    // Reset all states
+    setIsConversationActive(false);
+    setIsListening(false);
+    setIsProcessing(false);
+    setIsSpeaking(false);
+    setTranscript("");
+    setOrderState('idle');
+    setCurrentOrder({
+      category: '',
+      style: '',
+      size: '',
+      color: '',
+      fitting: false,
+      deliveryMethod: '',
+      address: ''
+    });
+    setMessages([
+      {
+        id: "1",
+        text: "Hi! Welcome to StyleHub Fashion. I can help you find the perfect outfit, check our latest collections, or assist with your shopping needs. What would you like to explore today?",
+        isUser: false,
+        timestamp: new Date(),
+      },
+    ]);
+    
+    // Reset silence countdown
+    setSilenceCountdown(5);
+  };
+
   const updateOrderState = (userInput: string) => {
     const input = userInput.toLowerCase();
 
@@ -424,10 +497,22 @@ Response:`;
       utterance.onend = () => {
         console.log('Speech finished');
         setIsSpeaking(false);
+        // Automatically start listening after AI finishes speaking
+        setTimeout(() => {
+          if (!isListening && !isProcessing) {
+            startListening();
+          }
+        }, 500); // Small delay to ensure smooth transition
       };
       utterance.onerror = (event) => {
         console.error('Speech error:', event);
         setIsSpeaking(false);
+        // Also try to start listening on error
+        setTimeout(() => {
+          if (!isListening && !isProcessing) {
+            startListening();
+          }
+        }, 500);
       };
 
       speechSynthesis.speak(utterance);
@@ -500,7 +585,7 @@ Response:`;
       }
     },
     {
-      text: "Current Deals", icon: Tag, action: async () => {
+      text: "Current Deals", icon: Volume2, action: async () => {
         addMessage("What specials do you have?", true);
         setTimeout(async () => {
           try {
@@ -544,13 +629,13 @@ Response:`;
       countdownInterval = setInterval(() => {
         setSilenceCountdown(prev => {
           if (prev <= 1) {
-            return 30;
+            return 5;
           }
           return prev - 1;
         });
       }, 1000);
     } else {
-      setSilenceCountdown(30);
+      setSilenceCountdown(5);
     }
 
     return () => {
@@ -573,7 +658,7 @@ Response:`;
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Voice Status Display */}
-        <div className="text-center">
+        {/* <div className="text-center">
           {isListening && (
             <div className="space-y-2">
               <p className="text-sm text-blue-600 animate-pulse">
@@ -583,7 +668,7 @@ Response:`;
                 <div className="w-32 bg-gray-200 rounded-full h-2">
                   <div
                     className="bg-blue-600 h-2 rounded-full transition-all duration-1000"
-                    style={{ width: `${(silenceCountdown / 30) * 100}%` }}
+                    style={{ width: `${(silenceCountdown / 5) * 100}%` }}
                   ></div>
                 </div>
                 <span className="text-xs text-gray-600">
@@ -608,6 +693,32 @@ Response:`;
               {transcript}
             </p>
           )}
+        </div> */}
+
+        {/* Conversation Management */}
+        <div className="flex justify-center gap-3">
+          {!isConversationActive ? (
+            <Button
+              onClick={startConversation}
+              variant="default"
+              size="lg"
+              className="px-6"
+              disabled={isListening || isProcessing || isSpeaking}
+            >
+              <Play className="h-5 w-5 mr-2" />
+              Start Conversation
+            </Button>
+          ) : (
+            <Button
+              onClick={endConversation}
+              variant="destructive"
+              size="lg"
+              className="px-6"
+            >
+              <Square className="h-5 w-5 mr-2" />
+              End Conversation
+            </Button>
+          )}
         </div>
 
         {/* Quick Actions */}
@@ -619,7 +730,7 @@ Response:`;
               variant="outline"
               size="sm"
               className="h-12"
-              disabled={isListening || isProcessing}
+              disabled={isListening || isProcessing || !isConversationActive}
             >
               <action.icon className="h-4 w-4 mr-2" />
               {action.text}
@@ -629,26 +740,32 @@ Response:`;
 
         {/* Conversation */}
         <div className="border rounded-lg p-4 bg-muted/30 max-h-64 overflow-y-auto">
-          <div className="space-y-3">
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`flex ${message.isUser ? 'justify-end' : 'justify-start'}`}
-              >
+          {!isConversationActive ? (
+            <div className="text-center text-muted-foreground py-8">
+              <p className="text-sm">Click "Start Conversation" to begin talking with the AI assistant</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {messages.map((message) => (
                 <div
-                  className={`max-w-xs px-3 py-2 rounded-lg ${message.isUser
+                  key={message.id}
+                  className={`flex ${message.isUser ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div
+                    className={`max-w-xs px-3 py-2 rounded-lg ${message.isUser
                       ? 'bg-purple-600 text-white'
                       : 'bg-white border text-gray-800'
-                    }`}
-                >
-                  <p className="text-sm">{message.text}</p>
-                  <p className="text-xs opacity-70 mt-1">
-                    {message.timestamp.toLocaleTimeString()}
-                  </p>
+                      }`}
+                  >
+                    <p className="text-sm">{message.text}</p>
+                    <p className="text-xs opacity-70 mt-1">
+                      {message.timestamp.toLocaleTimeString()}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Voice Control - Bottom */}
@@ -658,7 +775,7 @@ Response:`;
             variant={isListening ? "destructive" : "default"}
             size="lg"
             className="rounded-full w-16 h-16"
-            disabled={isProcessing || isSpeaking}
+            disabled={isProcessing || isSpeaking || !isConversationActive}
           >
             {isProcessing ? (
               <Loader2 className="h-6 w-6 animate-spin" />
